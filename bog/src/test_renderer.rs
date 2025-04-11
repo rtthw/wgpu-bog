@@ -7,7 +7,7 @@ use wgpu::util::DeviceExt as _;
 
 
 pub struct Shader {
-    pipeline: wgpu::RenderPipeline,
+    pub pipeline: wgpu::RenderPipeline,
 }
 
 impl Shader {
@@ -18,12 +18,12 @@ impl Shader {
             source: desc.source,
         });
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
-            label: desc.pipeline_label,
+            label: desc.pipeline_layout_label,
             bind_group_layouts: &[],
             push_constant_ranges: &[],
         });
         let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
-            label: Some("Render Pipeline"),
+            label: desc.pipeline_label,
             layout: Some(&pipeline_layout),
             vertex: wgpu::VertexState {
                 module: &module,
@@ -58,6 +58,7 @@ pub struct ShaderDescriptor<'a> {
     pub source: wgpu::ShaderSource<'a>,
     pub label: Option<&'a str>,
     pub pipeline_label: Option<&'a str>,
+    pub pipeline_layout_label: Option<&'a str>,
     pub vertex_entry_point: Option<&'a str>,
     pub vertex_buffers: &'a [wgpu::VertexBufferLayout<'a>],
     pub fragment_entry_point: Option<&'a str>,
@@ -71,6 +72,7 @@ impl<'a> Default for ShaderDescriptor<'a> {
             source: wgpu::ShaderSource::Dummy(std::marker::PhantomData),
             label: None,
             pipeline_label: None,
+            pipeline_layout_label: None,
             vertex_entry_point: None,
             vertex_buffers: &[],
             fragment_entry_point: None,
