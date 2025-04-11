@@ -19,7 +19,7 @@ impl Renderer {
         }
     }
 
-    pub fn finish(self, device: &wgpu::Device, ) -> (wgpu::Buffer, wgpu::Buffer) {
+    pub fn finish(self, device: &wgpu::Device, ) -> (wgpu::Buffer, wgpu::Buffer, u32) {
         let vertex_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("Vertex Buffer"),
             contents: bytemuck::cast_slice(&self.vertices),
@@ -31,14 +31,25 @@ impl Renderer {
             usage: wgpu::BufferUsages::INDEX,
         });
 
-        (vertex_buffer, index_buffer)
+        (vertex_buffer, index_buffer, self.indices.len() as u32)
     }
 
-    pub fn render_quad(&mut self, quad: &Quad, color: [f32; 3]) {
+    pub fn add_quad(&mut self, quad: &Quad, color: [f32; 3]) {
         self.indices.reserve_exact(Quad::num_indices() as usize);
-        self.indices.extend(Quad::indices_u32().into_iter());
         self.vertices.reserve_exact(Quad::num_vertices() as usize);
+
+        self.indices.extend(Quad::indices_u32().into_iter());
         quad.push_with_color(color, &mut self.vertices);
+    }
+
+    pub fn add_quads(&mut self, quads: &[Quad], color: [f32; 3]) {
+        self.indices.reserve_exact(quads.len() * Quad::num_indices() as usize);
+        self.vertices.reserve_exact(quads.len() * Quad::num_vertices() as usize);
+
+        self.indices.extend(Quad::indices_u32().repeat(quads.len()));
+        for quad in quads {
+            quad.push_with_color(color, &mut self.vertices);
+        }
     }
 }
 
@@ -52,10 +63,30 @@ pub struct Vertex {
     color: [f32; 3],
 }
 
+impl Vertex {
+    pub fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                }
+            ]
+        }
+    }
+}
 
 pub struct Quad {
-    pos: [f32; 2],
-    size: [f32; 2],
+    pub pos: [f32; 2],
+    pub size: [f32; 2],
 }
 
 // Constants.
@@ -78,6 +109,10 @@ impl Quad {
 }
 
 impl Quad {
+    pub const fn new(pos: [f32; 2], size: [f32; 2]) -> Self {
+        Self { pos, size }
+    }
+
     pub fn push_with_color(&self, color: [f32; 3], out: &mut Vec<Vertex>) {
         out.extend([
             Vertex { pos: self.pos, color },

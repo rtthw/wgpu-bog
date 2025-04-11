@@ -2,7 +2,6 @@
 
 
 use bog::*;
-use wgpu::util::DeviceExt as _;
 use winit::{event::WindowEvent, window::Window};
 
 
@@ -190,22 +189,10 @@ impl<'a> State<'a> {
             multiview: None,
             cache: None,
         });
-        let test_shape = Mesh::rect([0.1, 0.2], [0.5, 0.3], [0.5, 0.3, 0.7]);
-        let vertex_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Vertex Buffer"),
-                contents: bytemuck::cast_slice(&test_shape.vertices),
-                usage: wgpu::BufferUsages::VERTEX,
-            }
-        );
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Index Buffer"),
-                contents: bytemuck::cast_slice(&test_shape.indices),
-                usage: wgpu::BufferUsages::INDEX,
-            }
-        );
-        let num_indices = test_shape.indices.len() as u32;
+
+        let mut renderer = Renderer::start();
+        renderer.add_quad(&Quad::new([0.1, 0.2], [0.5, 0.3]), [0.5, 0.3, 0.7]);
+        let (vertex_buffer, index_buffer, num_indices) = renderer.finish(&device);
 
         Self {
             surface,
@@ -282,59 +269,5 @@ impl<'a> State<'a> {
         output.present();
 
         Ok(())
-    }
-}
-
-
-
-// ---
-
-
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-#[derive(bytemuck::Pod, bytemuck::Zeroable)]
-struct Vertex {
-    position: [f32; 2],
-    color: [f32; 3],
-}
-
-impl Vertex {
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        wgpu::VertexBufferLayout {
-            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Vertex,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    shader_location: 0,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x3,
-                }
-            ]
-        }
-    }
-}
-
-struct Mesh {
-    vertices: Vec<Vertex>,
-    indices: Vec<u32>,
-}
-
-impl Mesh {
-    fn rect(pos: [f32; 2], size: [f32; 2], color: [f32; 3]) -> Self {
-        Self {
-            vertices: vec![
-                Vertex { position: pos, color },
-                Vertex { position: [pos[0] + size[0], pos[1]], color },
-                Vertex { position: [pos[0], pos[1] + size[1]], color },
-                Vertex { position: [pos[0] + size[0], pos[1] + size[1]], color },
-            ],
-            indices: vec![0, 1, 2, 2, 1, 3],
-        }
     }
 }
