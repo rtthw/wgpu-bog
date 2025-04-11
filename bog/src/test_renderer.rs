@@ -6,6 +6,94 @@ use wgpu::util::DeviceExt as _;
 
 
 
+pub struct Shader {
+    pipeline: wgpu::RenderPipeline,
+}
+
+impl Shader {
+    // TODO: Error handling.
+    pub fn new(device: &wgpu::Device, desc: ShaderDescriptor) -> Result<Self, String> {
+        let module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+            label: desc.label,
+            source: desc.source,
+        });
+        let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+            label: desc.pipeline_label,
+            bind_group_layouts: &[],
+            push_constant_ranges: &[],
+        });
+        let pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &module,
+                entry_point: desc.vertex_entry_point,
+                buffers: desc.vertex_buffers,
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &module,
+                entry_point: desc.fragment_entry_point,
+                targets: desc.fragment_targets,
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: desc.primitive,
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+
+        Ok(Self {
+            pipeline,
+        })
+    }
+}
+
+pub struct ShaderDescriptor<'a> {
+    pub source: wgpu::ShaderSource<'a>,
+    pub label: Option<&'a str>,
+    pub pipeline_label: Option<&'a str>,
+    pub vertex_entry_point: Option<&'a str>,
+    pub vertex_buffers: &'a [wgpu::VertexBufferLayout<'a>],
+    pub fragment_entry_point: Option<&'a str>,
+    pub fragment_targets: &'a [Option<wgpu::ColorTargetState>],
+    pub primitive: wgpu::PrimitiveState,
+}
+
+impl<'a> Default for ShaderDescriptor<'a> {
+    fn default() -> Self {
+        Self {
+            source: wgpu::ShaderSource::Dummy(std::marker::PhantomData),
+            label: None,
+            pipeline_label: None,
+            vertex_entry_point: None,
+            vertex_buffers: &[],
+            fragment_entry_point: None,
+            fragment_targets: &[],
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                // NOTE: Setting this to anything other than `Fill` requires
+                //       `Features::NON_FILL_POLYGON_MODE`.
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // NOTE: Requires `Features::DEPTH_CLIP_CONTROL`.
+                unclipped_depth: false,
+                // NOTE: Requires `Features::CONSERVATIVE_RASTERIZATION`.
+                conservative: false,
+            },
+        }
+    }
+}
+
+
+
 pub struct Renderer {
     vertices: Vec<Vertex>,
     indices: Vec<u32>,
@@ -78,7 +166,7 @@ impl Vertex {
                     offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
                     shader_location: 1,
                     format: wgpu::VertexFormat::Float32x3,
-                }
+                },
             ]
         }
     }
