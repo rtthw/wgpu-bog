@@ -5,5 +5,4 @@ edition = "2024"
 
 [dependencies]
 bog = { path = "bog" }
-bytemuck = { version = "1", features = ["derive"] }
 futures = "0.3"
