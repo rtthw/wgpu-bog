@@ -2,6 +2,7 @@
 
 
 use bog::*;
+use wgpu::util::DeviceExt as _;
 use winit::{event::WindowEvent, window::Window};
 
 
@@ -72,6 +73,11 @@ struct State<'a> {
 
     // NOTE: Window must be dropped after the other surface fields.
     window: &'a Window,
+
+    render_pipeline: wgpu::RenderPipeline,
+    vertex_buffer: wgpu::Buffer,
+    index_buffer: wgpu::Buffer,
+    num_indices: u32,
 }
 
 impl<'a> State<'a> {
@@ -133,6 +139,74 @@ impl<'a> State<'a> {
             view_formats: vec![],
         };
 
+        let shader = device.create_shader_module(wgpu::include_wgsl!("shader.wgsl"));
+        let render_pipeline_layout = device.create_pipeline_layout(
+            &wgpu::PipelineLayoutDescriptor {
+                label: Some("Render Pipeline Layout"),
+                bind_group_layouts: &[],
+                push_constant_ranges: &[],
+            },
+        );
+        let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("Render Pipeline"),
+            layout: Some(&render_pipeline_layout),
+            vertex: wgpu::VertexState {
+                module: &shader,
+                entry_point: Some("vs_main"),
+                buffers: &[
+                    Vertex::desc(),
+                ],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_main"),
+                targets: &[Some(wgpu::ColorTargetState {
+                    format: config.format,
+                    blend: Some(wgpu::BlendState::REPLACE),
+                    write_mask: wgpu::ColorWrites::ALL,
+                })],
+                compilation_options: wgpu::PipelineCompilationOptions::default(),
+            }),
+            primitive: wgpu::PrimitiveState {
+                topology: wgpu::PrimitiveTopology::TriangleList,
+                strip_index_format: None,
+                front_face: wgpu::FrontFace::Ccw,
+                cull_mode: Some(wgpu::Face::Back),
+                // NOTE: Setting this to anything other than `Fill` requires
+                //       `Features::NON_FILL_POLYGON_MODE`.
+                polygon_mode: wgpu::PolygonMode::Fill,
+                // NOTE: Requires `Features::DEPTH_CLIP_CONTROL`.
+                unclipped_depth: false,
+                // NOTE: Requires `Features::CONSERVATIVE_RASTERIZATION`.
+                conservative: false,
+            },
+            depth_stencil: None,
+            multisample: wgpu::MultisampleState {
+                count: 1,
+                mask: !0,
+                alpha_to_coverage_enabled: false,
+            },
+            multiview: None,
+            cache: None,
+        });
+        let test_shape = Mesh::rect([0.1, 0.2], [0.5, 0.3], [0.5, 0.3, 0.7]);
+        let vertex_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Vertex Buffer"),
+                contents: bytemuck::cast_slice(&test_shape.vertices),
+                usage: wgpu::BufferUsages::VERTEX,
+            }
+        );
+        let index_buffer = device.create_buffer_init(
+            &wgpu::util::BufferInitDescriptor {
+                label: Some("Index Buffer"),
+                contents: bytemuck::cast_slice(&test_shape.indices),
+                usage: wgpu::BufferUsages::INDEX,
+            }
+        );
+        let num_indices = test_shape.indices.len() as u32;
+
         Self {
             surface,
             device,
@@ -140,6 +214,10 @@ impl<'a> State<'a> {
             config,
             size,
             window,
+            render_pipeline,
+            vertex_buffer,
+            index_buffer,
+            num_indices,
         }
     }
 
@@ -165,9 +243,7 @@ impl<'a> State<'a> {
 
     fn render(&mut self) -> Result<(), wgpu::SurfaceError> {
         let output = self.surface.get_current_texture().unwrap();
-        let view = output
-            .texture
-            .create_view(&wgpu::TextureViewDescriptor::default());
+        let view = output.texture.create_view(&wgpu::TextureViewDescriptor::default());
 
         let mut encoder = self.device.create_command_encoder(
             &wgpu::CommandEncoderDescriptor {
@@ -176,7 +252,7 @@ impl<'a> State<'a> {
         );
 
         {
-            let _render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("Render Pass"),
                 color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                     view: &view,
@@ -195,11 +271,70 @@ impl<'a> State<'a> {
                 occlusion_query_set: None,
                 timestamp_writes: None,
             });
+
+            render_pass.set_pipeline(&self.render_pipeline);
+            render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
+            render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32);
+            render_pass.draw_indexed(0..self.num_indices, 0, 0..1);
         }
 
         self.queue.submit(std::iter::once(encoder.finish()));
         output.present();
 
         Ok(())
+    }
+}
+
+
+
+// ---
+
+
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+#[derive(bytemuck::Pod, bytemuck::Zeroable)]
+struct Vertex {
+    position: [f32; 2],
+    color: [f32; 3],
+}
+
+impl Vertex {
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        wgpu::VertexBufferLayout {
+            array_stride: std::mem::size_of::<Vertex>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &[
+                wgpu::VertexAttribute {
+                    offset: 0,
+                    shader_location: 0,
+                    format: wgpu::VertexFormat::Float32x2,
+                },
+                wgpu::VertexAttribute {
+                    offset: std::mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
+                    shader_location: 1,
+                    format: wgpu::VertexFormat::Float32x3,
+                }
+            ]
+        }
+    }
+}
+
+struct Mesh {
+    vertices: Vec<Vertex>,
+    indices: Vec<u32>,
+}
+
+impl Mesh {
+    fn rect(pos: [f32; 2], size: [f32; 2], color: [f32; 3]) -> Self {
+        Self {
+            vertices: vec![
+                Vertex { position: pos, color },
+                Vertex { position: [pos[0] + size[0], pos[1]], color },
+                Vertex { position: [pos[0], pos[1] + size[1]], color },
+                Vertex { position: [pos[0] + size[0], pos[1] + size[1]], color },
+            ],
+            indices: vec![0, 1, 2, 2, 1, 3],
+        }
     }
 }

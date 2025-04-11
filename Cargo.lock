@@ -1728,6 +1728,7 @@ name = "wgpu-bog"
 version = "0.1.0"
 dependencies = [
  "bog",
+ "bytemuck",
  "futures",
 ]
 
